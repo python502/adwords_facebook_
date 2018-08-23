@@ -38,9 +38,9 @@ PAGE_SIZE = 300
 
 
 date_now = datetime.now().strftime("%Y%m%d%H%M%S")
-# date_now = '20180815154604'
+# date_now = '20180815205050'
 current_dir = os.path.abspath(os.path.dirname(__file__))
-work_dir = os.path.join(current_dir, date_now)
+work_dir = os.path.join(current_dir, 'adwords'+date_now)
 report_dir = os.path.join(work_dir, 'report')
 conf_dir = os.path.join(current_dir, 'conf')
 
@@ -156,7 +156,6 @@ def get_csv_files_and_ids(path, s0, s1):
                 result[id] = csv_path
     return result
 
-
 def generate_location_csv(csv_file, conf_dir):
     try:
         pandas_data = pd.read_csv(csv_file)
@@ -168,7 +167,7 @@ def generate_location_csv(csv_file, conf_dir):
         pandas_data.drop_duplicates('Parent ID', 'first', True)
         if not os.path.exists(conf_dir):
             os.mkdir(conf_dir)
-        location_csv_file = os.path.join(conf_dir, 'location.csv')
+        location_csv_file = os.path.join(conf_dir, 'adwords_location.csv')
         pandas_data['Parent ID'] = pandas_data['Parent ID'].fillna(0)
         x = pandas_data['Parent ID'].astype(int)
         pandas_data = pandas_data.drop('Parent ID', axis=1)
@@ -221,7 +220,7 @@ def integration_geo_info(location_report, location_conf):
             try:
                 i_map = int(i)
             except ValueError, ex:
-                logger.error('find error type error:{}'.format(ex))
+                logger.error('find Id type error:{}'.format(ex))
                 continue
             map_Criteria_ID = pandas_conf.loc[pandas_conf['Criteria ID'] == i_map]['Country Code'].tolist()
             if map_Criteria_ID and map_Criteria_ID[0]:
@@ -235,7 +234,7 @@ def integration_geo_info(location_report, location_conf):
         # 修改列名
         # a.rename(columns={'A': 'a', 'B': 'b', 'C': 'c'}, inplace=True)
         result_report = location_report.replace('_report_tmp.csv', '_report_{}.csv'.format(date_now))
-        pandas_report = pandas_report.sort_values(by="CampaignId")
+        pandas_report = pandas_report.sort_values(by=["CampaignId", 'Date'])
         pandas_report.to_csv(result_report, index=False,  columns=['CampaignId', 'Date', 'Impressions', 'Clicks', 'Conversions', 'Cost', 'Id', 'CountryCode', 'AccountId'])
         return True
     except Exception:
@@ -293,10 +292,12 @@ def get_adwords_apps(client, customerId, campaignId = []):
             selector['paging']['startIndex'] = str(offset)
             more_pages = offset < int(page['totalNumEntries'])
         return True, {'customerId': customerId, 'campaign_map_app': campaign_map_app}
-    except errors.AdWordsReportError, ex:
-        if ex.code == 500:
-            logger.error('customerId:{},campaignId:{} raise 500'.format(customerId, campaignId))
+    except errors.AdWordsReportError, e:
+        if e.code == 500:
+            logger.error('customerId:{},campaignId:{} raise 500, will retry'.format(customerId, campaignId))
             raise retry_if_500_error
+        else:
+            return False, {'customerId': customerId, 'campaignId': campaignId, 'e': e}
     except Exception, e:
         logger.error('customerId: {} error {}'.format(customerId, e))
         return False, {'customerId': customerId, 'campaignId':campaignId, 'e': e}
@@ -467,7 +468,7 @@ def parallel_report_downloads(report_download_directory, adwords_task):
 def generate_merged_report(adwords_task):
     if not os.path.exists(work_dir):
         os.mkdir(work_dir)
-    logger.info('report download begin')
+    logger.info('{} report download begin'.format(adwords_task.get('task_type')))
     parallel_report_downloads(work_dir, adwords_task)
     logger.info('all report download finish')
     return merge_reports(work_dir, report_dir, adwords_task.get('task_type'))
@@ -497,7 +498,7 @@ def generate_campaign_report(report_file):
         result_report = report_file.replace('_report_tmp.csv', '_report_{}.csv'.format(date_now))
         columns = pandas_report.columns.values.tolist()
         columns.remove('CampaignName')
-        pandas_report = pandas_report[columns].sort_values(by="CampaignId")
+        pandas_report = pandas_report[columns].sort_values(by=["CampaignId", 'Date'])
         pandas_report.to_csv(result_report, index=False)
         logger.info('generate_campaign_report success end')
         return True
@@ -619,7 +620,6 @@ def integration_app_info(campaign_report, app_conf, adwords_task):
                     pandas_report.loc[index, 'AppId'] = app_id
         logger.debug('account_map_campaign get finish, {}'.format(len(account_map_campaign)))
         get_success = []
-        print account_map_campaign.keys()
         if account_map_campaign:
             manager = multiprocessing.Manager()
             mcces = adwords_task.get('mcc')
@@ -633,11 +633,9 @@ def integration_app_info(campaign_report, app_conf, adwords_task):
                         try:
                             customer_id = customer_id_queue.get(timeout=0.01)
                             if customer_id in account_map_campaign:
-                                print customer_id
                                 input_queue.put([customer_id, account_map_campaign.get(customer_id)])
                         except Empty:
                             break
-                    print input_queue.qsize()
                     get_succeeded = manager.Queue()
                     get_failed = manager.Queue()
                     queue_size = input_queue.qsize()
@@ -689,7 +687,7 @@ def integration_app_info(campaign_report, app_conf, adwords_task):
 
 def generate_campaign_app_report(report_file, adwords_task):
     try:
-        app_csv_file = os.path.join(conf_dir, 'app.csv')
+        app_csv_file = os.path.join(conf_dir, 'adwords_app.csv')
         if not os.path.exists(app_csv_file):
             generate_campaign_app_conf(app_csv_file, adwords_task)
         return integration_app_info(report_file, app_csv_file, adwords_task)

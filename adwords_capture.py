@@ -13,9 +13,8 @@ from googleads import adwords, oauth2, errors
 from Queue import Empty
 from retrying import retry
 
-from adwords_mcces import adwords_tasks, report_defines, adwords_mccess
-from logger import logger
-
+# from adwords_mcces import adwords_tasks, report_defines, adwords_mccess
+from adwords_mcces import report_defines, adwords_mccess
 import pandas as pd
 import numpy as np
 import re
@@ -23,7 +22,9 @@ import copy
 import multiprocessing
 import os
 import time
-
+import logging
+import logging.handlers
+import argparse
 
 MAX_TIMES = 3
 ADW_VERSION = 'v201806'
@@ -40,10 +41,43 @@ PAGE_SIZE = 300
 date_now = datetime.now().strftime("%Y%m%d%H%M%S")
 # date_now = '20180815205050'
 current_dir = os.path.abspath(os.path.dirname(__file__))
-work_dir = os.path.join(current_dir, 'adwords'+date_now)
+work_dir = os.path.join(current_dir, 'adwords_'+date_now)
 report_dir = os.path.join(work_dir, 'report')
 conf_dir = os.path.join(current_dir, 'conf')
 
+
+logger = None
+
+format_dict = {
+    logging.DEBUG: logging.Formatter('%(asctime)s - %(filename)s:%(lineno)s - %(levelname)s - %(message)s'),
+    logging.INFO: logging.Formatter('%(asctime)s %(name)s %(levelname)s %(message)s'),
+    logging.WARNING: logging.Formatter('%(asctime)s %(name)s %(levelname)s %(message)s'),
+    logging.ERROR: logging.Formatter('%(asctime)s %(name)s %(funcName)s %(levelname)s %(message)s'),
+    logging.CRITICAL: logging.Formatter('%(asctime)s %(name)s %(funcName)s %(levelname)s %(message)s')
+}
+
+class Logger():
+    __cur_logger = logging.getLogger()
+    def __init__(self,loglevel):
+        #set name and loglevel
+        new_logger = logging.getLogger(__name__)
+        new_logger.setLevel(loglevel)
+        formatter = format_dict[loglevel]
+        filehandler = logging.handlers.RotatingFileHandler(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'adwords.log'), mode='a')
+        filehandler.setFormatter(formatter)
+        new_logger.addHandler(filehandler)
+        #create handle for stdout
+        streamhandler = logging.StreamHandler()
+        streamhandler.setFormatter(formatter)
+        #add handle to new_logger
+        new_logger.addHandler(streamhandler)
+        Logger.__cur_logger = new_logger
+
+    @classmethod
+    def getlogger(cls):
+        return cls.__cur_logger
+
+logger = Logger(logging.DEBUG).getlogger()
 
 #Something's not right!
 class Retry500Exception(Exception):
@@ -475,7 +509,7 @@ def generate_merged_report(adwords_task):
 
 def generate_location_report(adwords_task):
     try:
-        location_csv_file = os.path.join(conf_dir, 'location.csv')
+        location_csv_file = os.path.join(conf_dir, 'adwords_location.csv')
         if not os.path.exists(location_csv_file):
             logger.error('location_csv_file not exist')
             return False
@@ -746,17 +780,32 @@ def do_adwords_tasks(adwords_tasks):
 
 
 def main():
-    do_adwords_tasks(adwords_tasks)
-    # generate_merged_report(adwords_tasks[0])
-    # parallel_report_downloads('./20180815112302', adwords_tasks[0])
-    # generate_campaign_app_conf(r'./conf/app.csv', adwords_tasks[0])
-    # generate_location_csv(r'./AdWords API Location Criteria 2018-07-02.csv')
-    # integration_geo_info(r'./adwords_location_2443476994_report_LAST_7_DAYS.csv')
-    # integration_app_info(r'./20180813120124/report/adwords_campaign_report_tmp.csv', r'./conf/app.csv', adwords_tasks[0])
-    # generate_campaign_report(r'./20180810193448/report/adwords_campaign_report_tmp.csv')
-    # client = get_adwords_client('237-147-9138')
-    # GetCustomerIDs(client, '5593669658')
+    # adwords_tasks = ({'task_type': 'campaign', 'mcc': ("331-326-8943", "237-147-9138"), 'report_class': 2},
+    #                  {'task_type': 'location', 'mcc': ("331-326-8943", "237-147-9138")})
 
+    parser = argparse.ArgumentParser(description='Adwords Generate Report')
+    parser.add_argument('-m', '--mcc', default='331-326-8943,237-147-9138',
+                         help='list mcc info')
+    parser.add_argument('-t', '--type', required=True,
+                         help='report type, must be location or campaign and join by ","')
+    parser.add_argument('-r', '--report', default=2, type=int,
+                         help='report class,0 generate campaign report,1 generate campaign app report,other generate all report')
+
+    args = parser.parse_args()
+    task_type = args.type.split(',')
+    mcc = tuple(args.mcc.split(','))
+    report_class = args.report
+
+    facebook_tasks = []
+    for task in task_type:
+        task_info = {}
+        task_info['task_type'] = task
+        task_info['mcc'] = mcc
+        task_info['report_class'] = report_class
+        facebook_tasks.append(task_info)
+    facebook_tasks = tuple(facebook_tasks)
+    print facebook_tasks
+    do_adwords_tasks(facebook_tasks)
 if __name__ == '__main__':
     startTime = datetime.now()
     main()

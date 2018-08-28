@@ -787,9 +787,9 @@ def main():
     parser.add_argument('-m', '--mcc', default='331-326-8943,237-147-9138',
                          help='list mcc info')
     parser.add_argument('-t', '--type', required=True,
-                         help='report type, must be location or campaign and join by ","')
+                         help='report type, must be ')
     parser.add_argument('-r', '--report', default=2, type=int,
-                         help='report class,0 generate campaign report,1 generate campaign app report,other generate all report')
+                         help='report class')
 
     args = parser.parse_args()
     task_type = args.type.split(',')

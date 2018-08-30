@@ -56,6 +56,7 @@ format_dict = {
     logging.CRITICAL: logging.Formatter('%(asctime)s %(name)s %(funcName)s %(levelname)s %(message)s')
 }
 
+
 class Logger():
     __cur_logger = logging.getLogger()
     def __init__(self,loglevel):
@@ -79,13 +80,16 @@ class Logger():
 
 logger = Logger(logging.DEBUG).getlogger()
 
+
 #Something's not right!
 class Retry500Exception(Exception):
     def __init__(self, err='adwords 500 error'):
         super(Retry500Exception, self).__init__(err)
 
+
 def retry_if_500_error(exception):
     return isinstance(exception, Retry500Exception)
+
 
 class AppWorker(multiprocessing.Process):
     """A worker Process used to download reports for a set of customer IDs."""
@@ -179,6 +183,7 @@ class ReportWorker(multiprocessing.Process):
         except Exception, ex:
             logger.error('{} error {}'.format(self.ident, ex))
 
+
 def get_csv_files_and_ids(path, s0, s1):
     result = {}
     for file in os.walk(path):
@@ -189,6 +194,7 @@ def get_csv_files_and_ids(path, s0, s1):
                 csv_path = os.path.join(path, each_list.strip())
                 result[id] = csv_path
     return result
+
 
 def generate_location_csv(csv_file, conf_dir):
     try:
@@ -210,6 +216,7 @@ def generate_location_csv(csv_file, conf_dir):
         pandas_data.to_csv(location_csv_file, index=False, columns=['Criteria ID', 'Parent ID', 'Country Code'])
     except Exception:
         raise
+
 
 def merge_reports(work_dir, result_dir, task_type):
     try:
@@ -243,6 +250,7 @@ def merge_reports(work_dir, result_dir, task_type):
     except Exception:
         raise
 
+
 #会有垃圾数据1454474116,GOG_IOS_World_UAC_IAP_20180626_LY, --,2018-07-17,664798,1397,817.00,1430020359  Id为 --
 def integration_geo_info(location_report, location_conf):
     try:
@@ -274,9 +282,11 @@ def integration_geo_info(location_report, location_conf):
     except Exception:
         raise
 
+
 def check_setting(infos):
     if infos['Setting.Type'] == 'UniversalAppCampaignSetting':
         return True
+
 
 @retry(retry_on_exception=retry_if_500_error, wait_fixed=5000)
 def get_adwords_apps(client, customerId, campaignId = []):
@@ -346,6 +356,7 @@ def get_adwords_client(mcc):
                                            client_customer_id=adwords_mccess.get(mcc).client_customer_id)
     return adwords_client
 
+
 #only get customerid into queue
 def GetCustomerIDs(client, queue, down_success=[]):
     """Retrieves all CustomerIds in the account hierarchy.
@@ -393,6 +404,7 @@ def GetCustomerIDs(client, queue, down_success=[]):
         offset += PAGE_SIZE
         selector['paging']['startIndex'] = str(offset)
         more_pages = offset < int(page['totalNumEntries'])
+
 
 def _DownloadReport(process_id, adwords_client, report_download_file, customer_id, report_definition):
     """Helper function used by ReportWorker to download customer report.
@@ -588,6 +600,7 @@ def generate_campaign_app_conf(app_csv_file, adwords_task):
     pandas_conf = pd.DataFrame(campaign_map_app_l).sort_values(by="CampaignId")
     pandas_conf.to_csv(app_csv_file, index=False, columns=['CampaignId', 'AppId', 'Times'])
 
+
 def update_app_csv(app_conf, campaign_map_app):
     try:
         logger.info('begin update_app_csv file')
@@ -617,9 +630,10 @@ def update_app_csv(app_conf, campaign_map_app):
             pandas_conf.to_csv(app_conf, index=False, mode='a', header=False, columns=['CampaignId', 'AppId', 'Times'])
         logger.info('update_app_csv end')
         return True
-    except Exception,ex:
-        logger.error('campaign_map_app:{}'.format(campaign_map_app))
+    except Exception, ex:
+        logger.error('campaign_map_app:{}, ex:{}'.format(campaign_map_app, ex))
         return False
+
 
 def integration_app_info(campaign_report, app_conf, adwords_task):
     try:
@@ -719,6 +733,7 @@ def integration_app_info(campaign_report, app_conf, adwords_task):
     except Exception:
         raise
 
+
 def generate_campaign_app_report(report_file, adwords_task):
     try:
         app_csv_file = os.path.join(conf_dir, 'adwords_app.csv')
@@ -727,6 +742,7 @@ def generate_campaign_app_report(report_file, adwords_task):
         return integration_app_info(report_file, app_csv_file, adwords_task)
     except Exception:
         raise
+
 
 def generate_campaign_reports(adwords_task):
     report_file = generate_merged_report(adwords_task)
@@ -761,6 +777,7 @@ def generate_campaign_reports(adwords_task):
     else:
         return False
 
+
 def do_adwords_tasks(adwords_tasks):
     logger.info('work_dir: {}'.format(work_dir))
     for adwords_task in adwords_tasks:
@@ -787,7 +804,7 @@ def main():
     parser.add_argument('-m', '--mcc', default='331-326-8943,237-147-9138',
                          help='list mcc info')
     parser.add_argument('-t', '--type', required=True,
-                         help='report type, must be ')
+                         help='report type, must be location or campaign and join by ","')
     parser.add_argument('-r', '--report', default=2, type=int,
                          help='report class')
 
@@ -804,7 +821,6 @@ def main():
         task_info['report_class'] = report_class
         facebook_tasks.append(task_info)
     facebook_tasks = tuple(facebook_tasks)
-    print facebook_tasks
     do_adwords_tasks(facebook_tasks)
 if __name__ == '__main__':
     startTime = datetime.now()

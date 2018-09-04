@@ -15,6 +15,7 @@ from retrying import retry
 
 # from adwords_mcces import adwords_tasks, report_defines, adwords_mccess
 from adwords_mcces import report_defines, adwords_mccess
+from logger import Logger
 import pandas as pd
 import numpy as np
 import re
@@ -22,9 +23,9 @@ import copy
 import multiprocessing
 import os
 import time
-import logging
 import logging.handlers
 import argparse
+import psutil
 
 MAX_TIMES = 3
 ADW_VERSION = 'v201806'
@@ -39,46 +40,20 @@ PAGE_SIZE = 300
 
 
 date_now = datetime.now().strftime("%Y%m%d%H%M%S")
+check_file_name = 'adwords_{}.csv'.format(date_now[:8])
+CAMPAIGN_APP_REPORT = 'adwords_campaign_app_report_{}.csv'.format(date_now)
+CAMPAIGN_GEO_REPORT = 'adwords_campaign_geo_report_{}.csv'.format(date_now)
+CAMPAIGN_NO_GEO_REPORT = 'adwords_campaign_no_geo_report_{}.csv'.format(date_now)
 # date_now = '20180815205050'
 current_dir = os.path.abspath(os.path.dirname(__file__))
 work_dir = os.path.join(current_dir, 'adwords_'+date_now)
 report_dir = os.path.join(work_dir, 'report')
 conf_dir = os.path.join(current_dir, 'conf')
 
+check_file = os.path.join(current_dir, check_file_name)
+PID = os.getpid()
 
-logger = None
-
-format_dict = {
-    logging.DEBUG: logging.Formatter('%(asctime)s - %(filename)s:%(lineno)s - %(levelname)s - %(message)s'),
-    logging.INFO: logging.Formatter('%(asctime)s %(name)s %(levelname)s %(message)s'),
-    logging.WARNING: logging.Formatter('%(asctime)s %(name)s %(levelname)s %(message)s'),
-    logging.ERROR: logging.Formatter('%(asctime)s %(name)s %(funcName)s %(levelname)s %(message)s'),
-    logging.CRITICAL: logging.Formatter('%(asctime)s %(name)s %(funcName)s %(levelname)s %(message)s')
-}
-
-
-class Logger():
-    __cur_logger = logging.getLogger()
-    def __init__(self,loglevel):
-        #set name and loglevel
-        new_logger = logging.getLogger(__name__)
-        new_logger.setLevel(loglevel)
-        formatter = format_dict[loglevel]
-        filehandler = logging.handlers.RotatingFileHandler(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'adwords.log'), mode='a')
-        filehandler.setFormatter(formatter)
-        new_logger.addHandler(filehandler)
-        #create handle for stdout
-        streamhandler = logging.StreamHandler()
-        streamhandler.setFormatter(formatter)
-        #add handle to new_logger
-        new_logger.addHandler(streamhandler)
-        Logger.__cur_logger = new_logger
-
-    @classmethod
-    def getlogger(cls):
-        return cls.__cur_logger
-
-logger = Logger(logging.DEBUG).getlogger()
+logger = Logger(logging.DEBUG,  'adwords.log').getlogger()
 
 
 #Something's not right!
@@ -275,7 +250,8 @@ def integration_geo_info(location_report, location_conf):
                 pandas_report.loc[index_i, 'CountryCode'] = map_Parent_ID[0]
         # 修改列名
         # a.rename(columns={'A': 'a', 'B': 'b', 'C': 'c'}, inplace=True)
-        result_report = location_report.replace('_report_tmp.csv', '_report_{}.csv'.format(date_now))
+        # result_report = location_report.replace('_report_tmp.csv', '_report_{}.csv'.format(date_now))
+        result_report = location_report.replace('adwords_location_report_tmp.csv', CAMPAIGN_GEO_REPORT)
         pandas_report = pandas_report.sort_values(by=["CampaignId", 'Date'])
         pandas_report.to_csv(result_report, index=False,  columns=['CampaignId', 'Date', 'Impressions', 'Clicks', 'Conversions', 'Cost', 'Id', 'CountryCode', 'AccountId'])
         return True
@@ -521,6 +497,8 @@ def generate_merged_report(adwords_task):
 
 def generate_location_report(adwords_task):
     try:
+        if task_status_check(check_file, 'campaign_no_geo', 'success'):
+            return True
         location_csv_file = os.path.join(conf_dir, 'adwords_location.csv')
         if not os.path.exists(location_csv_file):
             logger.error('location_csv_file not exist')
@@ -540,14 +518,17 @@ def generate_location_report(adwords_task):
 def generate_campaign_report(report_file):
     try:
         logger.info('generate_campaign_report begin')
+        if task_status_check(check_file, 'campaign_geo', 'success'):
+            return True
         pandas_report = pd.read_csv(report_file)
-        result_report = report_file.replace('_report_tmp.csv', '_report_{}.csv'.format(date_now))
+        # result_report = report_file.replace('_report_tmp.csv', '_report_{}.csv'.format(date_now))
+        result_report = report_file.replace('adwords_campaign_report_tmp.csv', CAMPAIGN_NO_GEO_REPORT)
         columns = pandas_report.columns.values.tolist()
         columns.remove('CampaignName')
         pandas_report = pandas_report[columns].sort_values(by=["CampaignId", 'Date'])
         pandas_report.to_csv(result_report, index=False)
         logger.info('generate_campaign_report success end')
-        return True
+        return os.path.exists(result_report)
     except Exception:
         logger.error('generate_campaign_report faile end')
         raise
@@ -722,14 +703,15 @@ def integration_app_info(campaign_report, app_conf, adwords_task):
                 pandas_report.loc[index, 'AppId'] = app
         # 修改列名
         # a.rename(columns={'A': 'a', 'B': 'b', 'C': 'c'}, inplace=True)
-        result_file = campaign_report.replace('_report_tmp.csv', '_app_report_{}.csv'.format(date_now))
+        # result_file = campaign_report.replace('_report_tmp.csv', '_app_report_{}.csv'.format(date_now))
+        result_file = campaign_report.replace('adwords_campaign_report_tmp.csv', CAMPAIGN_APP_REPORT)
         pandas_report = pandas_report.sort_values(by="CampaignId")
         pandas_report.to_csv(result_file, index=False, columns=['CampaignId', 'CampaignName', 'AccountId', 'AppId'])
         if campaign_map_app:
             update_app_csv(app_conf, campaign_map_app)
         else:
             logger.debug('campaign_map_app is null no need to update_app_csv')
-        return True
+        return os.path.exists(result_file)
     except Exception:
         raise
 
@@ -737,6 +719,8 @@ def integration_app_info(campaign_report, app_conf, adwords_task):
 def generate_campaign_app_report(report_file, adwords_task):
     try:
         app_csv_file = os.path.join(conf_dir, 'adwords_app.csv')
+        if task_status_check(check_file, 'campaign_app', 'success'):
+            return True
         if not os.path.exists(app_csv_file):
             generate_campaign_app_conf(app_csv_file, adwords_task)
         return integration_app_info(report_file, app_csv_file, adwords_task)
@@ -745,6 +729,15 @@ def generate_campaign_app_report(report_file, adwords_task):
 
 
 def generate_campaign_reports(adwords_task):
+    if adwords_task.get('report_class') == 0:
+        if task_status_check(check_file, 'campaign_geo', 'success'):
+            return True
+    elif adwords_task.get('report_class') == 1:
+        if task_status_check(check_file, 'campaign_app', 'success'):
+            return True
+    else:
+        if task_status_check(check_file, 'campaign_app', 'success') and task_status_check(check_file, 'campaign_geo', 'success'):
+            return True
     report_file = generate_merged_report(adwords_task)
     result1 = True
     result2 = True
@@ -754,12 +747,20 @@ def generate_campaign_reports(adwords_task):
         except Exception, ex:
             logger.error('generate_campaign_report error;{}'.format(ex))
             result1 = False
+        if result1:
+            task_status_set(check_file, 'campaign_geo', 'success')
+        else:
+            task_status_set(check_file, 'campaign_geo', 'faild')
     elif adwords_task.get('report_class') == 1:
         try:
             result2 = generate_campaign_app_report(report_file, adwords_task)
         except Exception, ex:
             logger.error('generate_campaign_app_report error;{}'.format(ex))
             result2 = False
+        if result2:
+            task_status_set(check_file, 'campaign_app', 'success')
+        else:
+            task_status_set(check_file, 'campaign_app', 'faild')
     else:
         try:
             result1 = generate_campaign_report(report_file)
@@ -782,10 +783,24 @@ def do_adwords_tasks(adwords_tasks):
     logger.info('work_dir: {}'.format(work_dir))
     for adwords_task in adwords_tasks:
         logger.info('{} task begin'.format(adwords_task.get('task_type')))
+        result = False
+        count = 0
         if adwords_task.get('task_type') == 'location':
-            result = generate_location_report(adwords_task)
+            while not result and count<MAX_RETRIES:
+                result = generate_location_report(adwords_task)
+                count+=1
+            else:
+                logger.info('generate_location_report finish,count:{}'.format(count))
+            if result:
+                task_status_set(check_file, 'campaign_no_geo', 'success')
+            else:
+                task_status_set(check_file, 'campaign_no_geo', 'faild')
         elif adwords_task.get('task_type') == 'campaign':
-            result = generate_campaign_reports(adwords_task)
+            while not result and count<MAX_RETRIES:
+                result = generate_campaign_reports(adwords_task)
+                count+=1
+            else:
+                logger.info('generate_campaign_reports finish,count:{}'.format(count))
         else:
             logger.error('{} task not support'.format(adwords_task.get('task_type')))
             continue
@@ -794,7 +809,102 @@ def do_adwords_tasks(adwords_tasks):
         else:
             logger.error('{} task fail end'.format(adwords_task.get('task_type')))
 
+def delete_running_status(check_file):
+    try:
+        if not os.path.exists(check_file):
+            return True
+        pandas_csv = pd.read_csv(check_file, dtype=str)
+        indexs = pandas_csv.loc[pandas_csv['status'] == 'running'].index
+        pandas_csv = pandas_csv.drop(indexs)
+        pandas_csv.to_csv(check_file, index=False)
+    except Exception, ex:
+            logger.error('delete_running_status error:{}'.format(ex))
+            return True
 
+def task_status_set(check_file, report_type, status):
+    try:
+        task_info = dict()
+        if not os.path.exists(check_file):
+            task_info['pid'] = PID
+            task_info['report_type'] = ''
+            task_info['status'] = 'running'
+            infos = [task_info]
+            pandas_data = pd.DataFrame(infos)
+            logger.error('check_file:{} is not exist,will create it'.format(check_file))
+            pandas_data.to_csv(check_file, index=False)
+        if status == 'success':
+            pandas_csv = pd.read_csv(check_file, dtype=str)
+            map_info = pandas_csv.loc[(pandas_csv['report_type'] == report_type) & (pandas_csv['status'] == status)]
+            if not map_info.empty:
+                return True
+        task_info['pid'] = PID
+        task_info['report_type'] = report_type
+        task_info['status'] = status
+        infos = [task_info]
+        pandas_data = pd.DataFrame(infos)
+        pandas_data.to_csv(check_file, index=False, mode='a', header=False)
+        return os.path.exists(check_file)
+    except Exception, ex:
+            logger.error('task_status_set error:{}'.format(ex))
+            return False
+
+
+def task_status_check(check_file, report_type, status='success'):
+    try:
+        task_info = dict()
+        task_info['pid'] = PID
+        task_info['report_type'] = ''
+        task_info['status'] = 'running'
+        infos = [task_info]
+        pandas_data = pd.DataFrame(infos)
+        if not os.path.exists(check_file):
+            logger.error('check_file:{} is not exist,will create it'.format(check_file))
+            pandas_data.to_csv(check_file, index=False)
+            return False
+        else:
+            pandas_csv = pd.read_csv(check_file, dtype=str)
+            map_info = pandas_csv.loc[(pandas_csv['report_type'] == report_type) & (pandas_csv['status'] == status)]
+            if not map_info.empty:
+                logger.info('task_status_check report_type:{} have status:{} task'.format(report_type, status))
+                return True
+            else:
+                logger.debug('task_status_check report_type:{} not have status:{} task'.format(report_type, status))
+                return False
+
+    except pd.errors.EmptyDataError:
+            logger.error('check file is empty,need add infos')
+            pandas_data.to_csv(check_file, index=False)
+            return False
+
+def single_task_check(check_file):
+    try:
+        task_info = dict()
+        task_info['pid'] = PID
+        task_info['report_type'] = ''
+        task_info['status'] = 'running'
+        infos = [task_info]
+        pandas_data = pd.DataFrame(infos)
+        if os.path.exists(check_file):
+            pandas_csv = pd.read_csv(check_file, dtype=str)
+            map_pid = pandas_csv.loc[pandas_csv['status'] == 'running'][['pid']]
+            if not map_pid.empty:
+                current_pids = psutil.pids()
+                pids = map_pid['pid'].values
+                for pid in pids:
+                    if int(pid) in current_pids:
+                        logger.error('pid:{} is running,so exit current program'.format(pid))
+                        return False
+        else:
+            pandas_data.to_csv(check_file, index=False)
+            return os.path.exists(check_file)
+
+        pandas_data.to_csv(check_file, index=False, mode='a', header=False)
+        return os.path.exists(check_file)
+
+    except pd.errors.EmptyDataError:
+        logger.error('check file is empty,so need write data')
+        pandas_data.to_csv(check_file, index=False)
+        return os.path.exists(check_file)
 
 def main():
     # adwords_tasks = ({'task_type': 'campaign', 'mcc': ("331-326-8943", "237-147-9138"), 'report_class': 2},
@@ -804,14 +914,32 @@ def main():
     parser.add_argument('-m', '--mcc', default='331-326-8943,237-147-9138',
                          help='list mcc info')
     parser.add_argument('-t', '--type', required=True,
-                         help='report type, must be location or campaign and join by ","')
-    parser.add_argument('-r', '--report', default=2, type=int,
-                         help='report class')
-
+                         help='report type, must be campaign_app or campaign_geo or campaign_no_geo and join by ","')
+    # parser.add_argument('-r', '--report', default=2, type=int,
+    #                      help='report class')
+    if not single_task_check(check_file):
+        return False
+    task_type = list()
     args = parser.parse_args()
-    task_type = args.type.split(',')
+    task_type_tmp = args.type.split(',')
     mcc = tuple(args.mcc.split(','))
-    report_class = args.report
+    # report_class = args.report
+
+    if 'campaign_geo' in task_type_tmp:
+        task_type.append('location')
+
+    if 'campaign_no_geo' in task_type_tmp or 'campaign_app' in task_type_tmp:
+        task_type.append('campaign')
+
+    if 'campaign_no_geo' in task_type_tmp and 'campaign_app' not in task_type_tmp:
+        report_class = 0
+    elif 'campaign_no_geo' not in task_type_tmp and 'campaign_app' in task_type_tmp:
+        report_class = 1
+    elif 'campaign_no_geo' in task_type_tmp and 'campaign_app' in task_type_tmp:
+        report_class = 2
+    else:
+        logger.error('task_type_tmp error {}'.format(task_type_tmp))
+        return
 
     facebook_tasks = []
     for task in task_type:
@@ -822,6 +950,7 @@ def main():
         facebook_tasks.append(task_info)
     facebook_tasks = tuple(facebook_tasks)
     do_adwords_tasks(facebook_tasks)
+    delete_running_status(check_file)
 if __name__ == '__main__':
     startTime = datetime.now()
     main()

@@ -928,18 +928,17 @@ def main():
     if 'campaign_geo' in task_type_tmp:
         task_type.append('location')
 
-    if 'campaign_no_geo' in task_type_tmp or 'campaign_app' in task_type_tmp:
-        task_type.append('campaign')
-
     if 'campaign_no_geo' in task_type_tmp and 'campaign_app' not in task_type_tmp:
+        task_type.append('campaign')
         report_class = 0
     elif 'campaign_no_geo' not in task_type_tmp and 'campaign_app' in task_type_tmp:
+        task_type.append('campaign')
         report_class = 1
     elif 'campaign_no_geo' in task_type_tmp and 'campaign_app' in task_type_tmp:
+        task_type.append('campaign')
         report_class = 2
     else:
-        logger.error('task_type_tmp error {}'.format(task_type_tmp))
-        return
+        pass
 
     facebook_tasks = []
     for task in task_type:

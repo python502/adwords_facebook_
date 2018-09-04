@@ -537,6 +537,7 @@ def get_business_users_all(api):
     except Exception:
         raise
 
+
 @retry(retry_on_exception=retry_if_ConnectionError, wait_fixed=5000)
 def get_business_account_id(app_id):
     try:
@@ -638,6 +639,7 @@ def do_facebook_tasks(facebook_tasks):
             task_status_set(check_file, facebook_task, 'faild')
             logger.error('{} task fail end'.format(facebook_task))
 
+
 def delete_running_status(check_file):
     try:
         if not os.path.exists(check_file):
@@ -650,6 +652,7 @@ def delete_running_status(check_file):
     except Exception, ex:
             logger.error('delete_running_status error:{}'.format(ex))
             return True
+
 
 def task_status_set(check_file, report_type, status):
     try:
@@ -706,6 +709,7 @@ def task_status_check(check_file, report_type, status='success'):
             pandas_data.to_csv(check_file, index=False)
             return False
 
+
 def single_task_check(check_file):
     try:
         task_info = dict()
@@ -736,6 +740,7 @@ def single_task_check(check_file):
         pandas_data.to_csv(check_file, index=False)
         return os.path.exists(check_file)
 
+
 def main():
     parser = argparse.ArgumentParser(description='Facebook Generate Report')
     parser.add_argument('-a', '--app_id', default='411977828960172',
@@ -759,6 +764,8 @@ def main():
 
     do_facebook_tasks(facebook_tasks)
     delete_running_status(check_file)
+
+
 def main2():
     delete_running_status(r'D:\adwords\facebook_20180904.csv')
 

@@ -108,7 +108,6 @@ class AppWorker(multiprocessing.Process):
             r.get(result[0]).put(result[1])
 
 
-
 class ReportWorker(multiprocessing.Process):
     """A worker Process used to download reports for a set of customer IDs."""
 
@@ -495,6 +494,7 @@ def generate_merged_report(adwords_task):
     logger.info('all report download finish')
     return merge_reports(work_dir, report_dir, adwords_task.get('task_type'))
 
+
 def generate_location_report(adwords_task):
     try:
         if task_status_check(check_file, 'campaign_no_geo', 'success'):
@@ -809,6 +809,7 @@ def do_adwords_tasks(adwords_tasks):
         else:
             logger.error('{} task fail end'.format(adwords_task.get('task_type')))
 
+
 def delete_running_status(check_file):
     try:
         if not os.path.exists(check_file):
@@ -820,6 +821,7 @@ def delete_running_status(check_file):
     except Exception, ex:
             logger.error('delete_running_status error:{}'.format(ex))
             return True
+
 
 def task_status_set(check_file, report_type, status):
     try:
@@ -876,6 +878,7 @@ def task_status_check(check_file, report_type, status='success'):
             pandas_data.to_csv(check_file, index=False)
             return False
 
+
 def single_task_check(check_file):
     try:
         task_info = dict()
@@ -905,6 +908,7 @@ def single_task_check(check_file):
         logger.error('check file is empty,so need write data')
         pandas_data.to_csv(check_file, index=False)
         return os.path.exists(check_file)
+
 
 def main():
     # adwords_tasks = ({'task_type': 'campaign', 'mcc': ("331-326-8943", "237-147-9138"), 'report_class': 2},
@@ -942,7 +946,7 @@ def main():
 
     facebook_tasks = []
     for task in task_type:
-        task_info = {}
+        task_info = dict()
         task_info['task_type'] = task
         task_info['mcc'] = mcc
         task_info['report_class'] = report_class
@@ -950,6 +954,8 @@ def main():
     facebook_tasks = tuple(facebook_tasks)
     do_adwords_tasks(facebook_tasks)
     delete_running_status(check_file)
+
+
 if __name__ == '__main__':
     startTime = datetime.now()
     main()

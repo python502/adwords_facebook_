@@ -546,7 +546,7 @@ def get_business_account_id(app_id):
         api = FacebookAdsApi.init(facebook_app.app_id, facebook_app.app_secret, facebook_app.access_token)
         manager = multiprocessing.Manager()
         bs = get_business_users_all(api)
-        bs = bs[:1]
+        # bs = bs[:1]
         logger.debug('app_id:{} get bs len:{}'.format(app_id, len(bs)))
         if not bs:
             return []
@@ -604,7 +604,7 @@ def do_facebook_tasks(facebook_tasks):
         business_account = get_business_account_id(app)
         if not business_account:
             continue
-        business_account = business_account[:1]
+        # business_account = business_account[:1]
         datas[app] = business_account
     if not datas:
         logger.error('get no business and account data so exit')
@@ -726,7 +726,7 @@ def single_task_check(check_file):
                 pids = map_pid['pid'].values
                 for pid in pids:
                     if int(pid) in current_pids:
-                        logger.error('pid:{} is running,so exit current program')
+                        logger.error('pid:{} is running,so exit current program'.format(pid))
                         return False
         else:
             pandas_data.to_csv(check_file, index=False)

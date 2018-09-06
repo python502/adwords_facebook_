@@ -331,7 +331,7 @@ def update_app_csv(app_conf, campaign_map_app):
         logger.info('update_app_csv end')
         return True
     except Exception, ex:
-        logger.error('update_app_csv: error {} campaign'.format(ex, campaign))
+        logger.error('update_app_csv: error {} campaign {}'.format(ex, campaign))
         return False
 
 
@@ -351,7 +351,7 @@ def integration_app_info(app_campaign, app_conf, campaign_report_file):
             appid_map_campaign[app] = list()
             for info in infos:
                 CampaignId = info[1]
-                map_app = pandas_conf.loc[pandas_conf['CampaignId'] == CampaignId][['FBAppId', 'AppStoreUrl','CampaignName', 'Times']]
+                map_app = pandas_conf.loc[pandas_conf['CampaignId'] == CampaignId][['FBAppId', 'AppStoreUrl', 'CampaignName', 'Times']]
                 if map_app.empty:
                     #没查到的
                     if CampaignId in appid_map_campaign.get(app):
@@ -418,11 +418,20 @@ def start_insights_task(task_queue, e, datas, task_type):
         facebook_app = facebook_apps.get(app)
         api = FacebookAdsApi.init(facebook_app.app_id, facebook_app.app_secret, facebook_app.access_token)
         AdAccount(api=api)
+        retry_count = 0
         for b_a in business_account:
-            b_a['TokenId'] = app
-            i_async_job = AdAccount(ACT+b_a.get('AccountId')).get_insights(is_async=True, params=report_define.get('params'), fields=report_define.get('fields'))
-            task_queue.put((b_a, task_type, i_async_job))
-            time.sleep(0.5)
+            while retry_count < MAX_RETRIES:
+                try:
+                    b_a['TokenId'] = app
+                    i_async_job = AdAccount(ACT+b_a.get('AccountId')).get_insights(is_async=True, params=report_define.get('params'), fields=report_define.get('fields'))
+                    task_queue.put((b_a, task_type, i_async_job))
+                    time.sleep(0.5)
+                    break
+                except Exception, ex:
+                    retry_count += 1
+                    logger.error('[{}\{}] AccountId\Retry get error:{}'.format(b_a.get('AccountId'), retry_count, ex))
+            else:
+                logger.error('*****AccountId:{} error*****'.format(b_a.get('AccountId')))
     e.set()
     logger.info('******************************  start_insights_task finish  ******************************')
 
@@ -452,11 +461,11 @@ def get_campaign_report(datas, task_type):
         logger.debug('Report for AccountId {} CampaignId {} succeeded.'.format(success['AccountId'], success['CampaignId']))
     logger.info('download success {} report'.format(len(result_success)))
 
-    n=0
+    n = 0
     while True:
         try:
             fail = fail_queue.get(timeout=0.01)
-            n+=1
+            n += 1
         except Empty:
             break
         logger.error('Report for AccountId {} failed.'.format(fail['AccountId']))
@@ -509,12 +518,12 @@ def get_accounts(result_queue, b_id, app_id):
                         a_id = account['account_id']
                         b_a['AccountId'] = str(a_id)
                         result_queue.put(b_a)
-                        n+=1
+                        n += 1
                     flag = at.load_next_page()
                 logger.debug('b_id:{} len at:{}'.format(b_id, n))
                 return
             except ConnectionError:
-                if retry_count<MAX_RETRIES:
+                if retry_count < MAX_RETRIES:
                     time.sleep(SLEEP_TIME)
                     continue
                 else:
@@ -616,16 +625,16 @@ def do_facebook_tasks(facebook_tasks):
         result = False
         count = 0
         if facebook_task == 'campaign_app':
-            while not result and count<MAX_RETRIES:
+            while not result and count < MAX_RETRIES:
                 result = generate_campaign_app_report(datas)
-                count+=1
+                count += 1
             else:
                 logger.info('generate_campaign_app_report finish,count:{}'.format(count))
 
         elif facebook_task in ['campaign_geo', 'campaign_no_geo']:
             while not result and count<MAX_RETRIES:
                 result = generate_campaign_reports(datas, facebook_task)
-                count+=1
+                count += 1
             else:
                 logger.info('generate_campaign_reports finish,count:{}'.format(count))
 
@@ -708,6 +717,9 @@ def task_status_check(check_file, report_type, status='success'):
             logger.error('check file is empty,need add infos')
             pandas_data.to_csv(check_file, index=False)
             return False
+    except Exception, ex:
+        logger.error('task_status_check error:{}'.format(ex))
+        raise
 
 
 def single_task_check(check_file):
@@ -739,7 +751,9 @@ def single_task_check(check_file):
         logger.error('check file is empty,so need write data')
         pandas_data.to_csv(check_file, index=False)
         return os.path.exists(check_file)
-
+    except Exception, ex:
+        logger.error('single_task_check error:{}'.format(ex))
+        raise
 
 def main():
     parser = argparse.ArgumentParser(description='Facebook Generate Report')

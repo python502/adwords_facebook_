@@ -53,7 +53,7 @@ check_file = os.path.join(current_dir, check_file_name)
 PID = os.getpid()
 MAX_PROCESSES = multiprocessing.cpu_count()
 
-logger = Logger(logging.DEBUG, 'facebook.log').getlogger()
+logger = Logger(logging.INFO, 'facebook.log').getlogger()
 
 def retry_if_ConnectionError(exception):
     return isinstance(exception, ConnectionError)
@@ -134,9 +134,10 @@ class InsightsWorker(multiprocessing.Process):
                     break
             try:
                 _DownloadReport(self.ident, info, self.input_queue, self.failure_queue)
-                n+=1
+                print n
                 if not n%500:
                     logger.info('[{}] is running now,n:{}'.format(self.ident, n))
+                n += 1
             except Exception, ex:
                 logger.error('info:{} error,{}'.format(info[0], ex))
 
@@ -413,6 +414,7 @@ def integration_app_info(app_campaign, app_conf, campaign_report_file):
 
 
 def start_insights_task(task_queue, e, datas, task_type):
+    logger.info('******************************  start_insights_task begin  ******************************')
     report_define = report_defines.get(task_type)
     for app, business_account in datas.iteritems():
         facebook_app = facebook_apps.get(app)
@@ -430,6 +432,7 @@ def start_insights_task(task_queue, e, datas, task_type):
                 except Exception, ex:
                     retry_count += 1
                     logger.error('[{}\{}] AccountId\Retry get error:{}'.format(b_a.get('AccountId'), retry_count, ex))
+                    time.sleep(retry_count * BACKOFF_FACTOR)
             else:
                 logger.error('*****AccountId:{} error*****'.format(b_a.get('AccountId')))
     e.set()

@@ -13,8 +13,10 @@ from facebook_business.adobjects.adaccount import AdAccount
 from facebook_business.adobjects.business import Business
 from facebook_business.adobjects.businessuser import BusinessUser
 from facebook_business.adobjects.adaccountuser import AdAccountUser as AdUser
-
 # from facebook_conf import facebook_tasks, facebook_apps, report_defines
+from facebook_business.adobjects.adreportrun import AdReportRun
+from facebook_business.adobjects.adsinsights import AdsInsights
+
 from facebook_conf import facebook_apps, report_defines
 from logger import Logger
 from Queue import Empty
@@ -53,7 +55,7 @@ check_file = os.path.join(current_dir, check_file_name)
 PID = os.getpid()
 MAX_PROCESSES = multiprocessing.cpu_count()
 
-logger = Logger(logging.INFO, 'facebook.log').getlogger()
+logger = Logger(logging.DEBUG, 'facebook.log').getlogger()
 
 def retry_if_ConnectionError(exception):
     return isinstance(exception, ConnectionError)
@@ -68,12 +70,19 @@ def _DownloadReport(process_id, info, input_queue, fail_queue):
         try:
             logger.debug('[{}/{}] Loading info for {}'.format(process_id, retry_count, result))
             while True:
-                job = i_async_job.remote_read()
-                logger.debug('account_id:{} finish:{}'.format(result.get('AccountId'), job['async_percent_completion']))
-                time.sleep(0.5)
-                if job:
+                # job = i_async_job.remote_read()
+                # logger.debug('account_id:{} finish:{}'.format(result.get('AccountId'), job['async_percent_completion']))
+                # time.sleep(0.5)
+                # if job:
+                #     logger.debug('account_id:{} Done'.format(result.get('AccountId')))
+                #     break
+
+                job = i_async_job.api_get()
+                logger.debug('account_id:{} finish:{}'.format(result.get('AccountId'), job[AdReportRun.Field.async_percent_completion]))
+                if job[AdReportRun.Field.async_status] == 'Job Completed' and job[AdReportRun.Field.async_percent_completion] == 100:
                     logger.debug('account_id:{} Done'.format(result.get('AccountId')))
                     break
+                time.sleep(0.5)
             flag = True
             result_cursor = i_async_job.get_result(params={'limit': 1000})
             if not result_cursor:
@@ -134,7 +143,6 @@ class InsightsWorker(multiprocessing.Process):
                     break
             try:
                 _DownloadReport(self.ident, info, self.input_queue, self.failure_queue)
-                print n
                 if not n%500:
                     logger.info('[{}] is running now,n:{}'.format(self.ident, n))
                 n += 1
